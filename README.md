@@ -1,146 +1,148 @@
-# Smart Andon System for TEKCOM Kitchen Cabinet Manufacturing
+# Andon TEKCOM - Real-time Production Monitoring System
 
-A real-time monitoring and alert system for TEKCOM kitchen cabinet manufacturing plant with intelligent Andon capabilities.
+## 🏭 Tổng quan
 
-## Key Features
+Hệ thống Andon TEKCOM là giải pháp giám sát sản xuất thời gian thực, trực quan hóa trạng thái các trạm, ghi log sự kiện và tích hợp thông báo Microsoft Teams qua Power Automate. Hệ thống phù hợp cho nhà máy sản xuất hiện đại, hỗ trợ chuyển đổi số và nâng cao hiệu quả vận hành.
 
-- 🏭 **Real-time monitoring** of production stations (CNC, Edge Banding, Drilling, Assembly, QC, Packaging)
-- 🚨 **4-level alert system**: Green, Yellow, Red, Blue
-- 📊 **Visual dashboard** with factory layout and statistics
-- ⚡ **Real-time communication** via Socket.IO
-- 📱 **Responsive interface** for all devices
-- 📈 **Reports and analytics** for production performance
+---
 
-## Project Structure
+## 🚀 Tính năng nổi bật
+- **Giám sát trạng thái 11 trạm sản xuất (S, C, P) theo thời gian thực**
+- **Chuyển đổi trạng thái trạm (Bình thường, Cảnh báo, Lỗi, Bảo trì) trực tiếp trên dashboard**
+- **Giao diện dashboard trực quan, realtime, tối ưu cho desktop và tablet**
+- **Ghi log mọi sự kiện đổi trạng thái, reset, truy vết lịch sử**
+- **Tích hợp gửi thông báo Teams qua Power Automate khi có sự kiện quan trọng**
+- **Trang thống kê với timeline trạng thái từng trạm, chọn ngày, tooltip chi tiết**
+- **Hỗ trợ mô phỏng trạm (Station Simulator) để kiểm thử realtime**
+- **Tích hợp phần cứng Arduino/PLC dễ dàng**
 
-```
-andon-system-tekcom/
-├── server/          # Backend Node.js + Express + Socket.IO
-├── client/          # Frontend React.js
-├── database/        # SQLite database
-└── docs/           # Technical documentation
-```
+---
 
-## Installation and Setup
+## 🖥️ Kiến trúc hệ thống
+- **Backend:** Node.js, Express, Socket.IO, MySQL
+- **Frontend:** React.js, Material-UI, dayjs, Chart.js
+- **Realtime:** Socket.IO
+- **Thông báo:** Power Automate HTTP POST (Teams)
+- **Phần cứng:** Arduino/PLC (Ethernet/WiFi)
 
-### System Requirements
-- Node.js 16+
-- npm or yarn
+---
 
-### Installation
+## 📦 Cài đặt & Khởi động
+
+### 1. Yêu cầu hệ thống
+- Node.js >= 16
+- MySQL >= 5.7
+
+### 2. Clone & cài đặt
 ```bash
-# Clone repository
-git clone https://github.com/QuanK04/andon-system-tekcom.git
+# Clone project
+https://github.com/QuanK04/andon-system-tekcom.git
 cd andon-system-tekcom
 
-# Install all dependencies
-npm run install-all
+# Cài đặt backend
+cd server
+npm install
+
+# Cài đặt frontend
+cd ../client
+npm install
 ```
 
-### Running the Application
+### 3. Cấu hình database MySQL
+- Tạo database `andon_db` và user phù hợp.
+- Cập nhật thông tin kết nối trong `server/database/mysql.js`:
+```js
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'andon_user',
+  password: 'your_password',
+  database: 'andon_db',
+  ...
+});
+```
+- Tạo bảng `stations` và `logs` (xem file `server/database/create_log_table.sql`):
+```sql
+CREATE TABLE logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  event_type VARCHAR(32) NOT NULL,
+  time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  source VARCHAR(16) NOT NULL,
+  station_id VARCHAR(16),
+  old_status VARCHAR(16),
+  new_status VARCHAR(16)
+);
+```
+
+### 4. Khởi động hệ thống
 ```bash
-# Run both backend and frontend
-npm run dev
+# Chạy backend
+cd server
+npm start
 
-# Or run separately
-npm run server    # Backend on port 5000
-npm run client    # Frontend on port 3000
+# Chạy frontend
+cd ../client
+npm start
 ```
+- Truy cập: http://localhost:3000
 
-### Frontend Only Demo
-```bash
-# Run frontend with mock data (no backend required)
-npm run frontend-only
+---
+
+## ⚡ Tính năng UI/UX
+- **Đổi trạng thái trạm realtime, tối ưu thao tác**
+- **Box "Cảnh báo đang hoạt động" hiển thị các trạm bất thường **
+- **Thống kê số lượng trạm theo từng trạng thái (bình thường, cảnh báo, lỗi, bảo trì)**
+- **Timeline trạng thái các trạm**
+
+---
+
+## 🔔 Tích hợp Power Automate (Teams)
+- Khi đổi trạng thái trạm hoặc reset tất cả, hệ thống gửi thông báo chuẩn hóa lên Teams qua Power Automate HTTP POST URL.
+- Cú pháp tin nhắn:
+  - `[ANDON] [HH:mm:ss DD/MM/YYYY] Trạm [Tên][Mã số] thay đổi trạng thái từ [Trạng thái cũ] thành [Trạng thái mới]`
+  - `[ANDON] Tất cả các trạm được reset về trạng thái bình thường`
+- Cấu hình URL và team/channel trong code backend (`server/socket/socketHandlers.js` và `server/index.js`).
+
+---
+
+## 🛠️ Tích hợp phần cứng
+- Hỗ trợ kết nối Arduino/PLC qua Ethernet/WiFi.
+- Xem hướng dẫn chi tiết tại `docs/hardware-integration-guide.md`.
+- Ví dụ cấu hình trạm:
+```js
+{
+  "S1": { name: "Chuyền treo", ip: "192.168.10.1", ... },
+  "C1": { name: "Cắt ván", ip: "192.168.20.1", ... },
+  ...
+}
 ```
+- Code mẫu Arduino: `hardware/arduino-station/station_arduino.ino`
 
-## Monitored Production Stations
+---
 
-1. **CNC** - Wood cutting according to design
-2. **Edge Banding** - Edge banding for wood panels
-3. **Drilling** - Hole drilling for hinges and accessories
-4. **Assembly** - Component assembly
-5. **QC** - Quality control inspection
-6. **Packaging** - Final product packaging
+## 🗃️ Database Schema
+- **stations**: id, name, code, status, last_updated, ...
+- **logs**: id, event_type, time, source, station_id, old_status, new_status
 
-## Alert System
+---
 
-- 🟢 **Green**: Normal operation
-- 🟡 **Yellow**: Minor warning (attention needed)
-- 🔴 **Red**: Critical issue (immediate intervention required)
-- 🔵 **Blue**: Scheduled maintenance
+## 📑 Scripts & Lệnh hữu ích
+- Backend: `npm start` / `npm run dev` (nodemon)
+- Frontend: `npm start` / `npm run build`
+- Reset trạng thái tất cả trạm: Nút trên dashboard
+- Xem log: Truy vấn bảng `logs` hoặc qua API
 
-## API Endpoints
+---
 
-- `GET /api/stations` - Get station list
-- `POST /api/alerts` - Create new alert
-- `PUT /api/alerts/:id` - Update alert status
-- `GET /api/statistics` - Production statistics
+## 💡 Gợi ý mở rộng
+- Thêm phân quyền người dùng (admin/operator)
+- Lịch sử timeline nhiều ngày, lọc theo khu vực
+- Tích hợp báo cáo PDF, xuất Excel
+- Tích hợp thêm thiết bị IoT khác
 
-## Technologies Used
+---
 
-- **Backend**: Node.js, Express, Socket.IO, SQLite
-- **Frontend**: React.js, Material-UI, Chart.js
-- **Database**: SQLite
-- **Real-time**: Socket.IO
+## 📄 License
+MIT. See [LICENSE](LICENSE).
 
-## Demo Features
-
-### Full System Demo
-- Complete backend and frontend integration
-- Real-time data updates via Socket.IO
-- SQLite database with sample data
-- All production stations monitored
-
-### Frontend Only Demo
-- Standalone React application
-- Mock data and simulated real-time updates
-- No backend required
-- Perfect for quick testing and demonstrations
-
-## Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/QuanK04/andon-system-tekcom.git
-   cd andon-system-tekcom
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Run the demo**
-   ```bash
-   # Full system demo
-   npm run dev
-   
-   # Frontend only demo
-   npm run frontend-only
-   ```
-
-4. **Access the application**
-   - Full demo: http://localhost:3000
-   - Frontend only: http://localhost:3000
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Author
-
-Quan Nguyen - [GitHub Profile](https://github.com/QuanK04)
-
-## Acknowledgments
-
-- TEKCOM Manufacturing for the use case
-- Material-UI for the beautiful components
-- Socket.IO for real-time communication
+## 👤 Tác giả & Liên hệ
+- Quan Nguyen (https://github.com/QuanK04)

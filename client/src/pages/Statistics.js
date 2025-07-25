@@ -19,6 +19,8 @@ import {
   Paper,
   Chip,
   LinearProgress,
+  TextField,
+  Tooltip,
 } from '@mui/material';
 import {
   BarChart as BarChartIcon,
@@ -28,16 +30,127 @@ import {
 } from '@mui/icons-material';
 import { useData } from '../context/DataContext';
 import { useSocket } from '../context/SocketContext';
+import axios from 'axios';
+import dayjs from 'dayjs';
+
+const STATUS_COLORS = {
+  normal: '#43a047',
+  warning: '#ffa726',
+  error: '#e53935',
+  maintenance: '#1e88e5',
+  future: '#e0e0e0',
+};
+
+const STATUS_LABELS = {
+  normal: 'Bình thường',
+  warning: 'Cảnh báo',
+  error: 'Lỗi',
+  maintenance: 'Bảo trì',
+  future: 'Tương lai',
+};
+
+function StationStatusTimeline({ stationId, date, stations }) {
+  const [log, setLog] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+
+  useEffect(() => {
+    if (!stationId || !date) return;
+    setLoading(true);
+    axios.get(`/api/stations/${stationId}/status-log?date=${date}`)
+      .then(res => setLog(res.data.data || []))
+      .catch(() => setLog([]))
+      .finally(() => setLoading(false));
+  }, [stationId, date]);
+
+  // Chuẩn bị dữ liệu các đoạn màu
+  const segments = [];
+  const startOfDay = dayjs(date).startOf('day');
+  const endOfDay = dayjs(date).endOf('day');
+  let lastTime = startOfDay;
+  let lastStatus = 'normal';
+  if (log.length > 0 && dayjs(log[0].time).isAfter(startOfDay)) {
+    lastStatus = 'normal';
+  }
+  log.forEach((entry, idx) => {
+    const entryTime = dayjs(entry.time);
+    if (entryTime.isAfter(lastTime)) {
+      segments.push({
+        from: lastTime,
+        to: entryTime,
+        status: lastStatus,
+      });
+    }
+    lastTime = entryTime;
+    lastStatus = entry.new_status;
+  });
+  // Đoạn cuối cùng đến hết ngày hoặc đến hiện tại nếu là hôm nay
+  const now = dayjs();
+  const isToday = dayjs(date).isSame(now, 'day');
+  if (isToday && now.isAfter(lastTime)) {
+    segments.push({ from: lastTime, to: now, status: lastStatus });
+    if (now.isBefore(endOfDay)) {
+      segments.push({ from: now, to: endOfDay, status: 'future' });
+    }
+  } else if (!isToday && lastTime.isBefore(endOfDay)) {
+    segments.push({ from: lastTime, to: endOfDay, status: lastStatus });
+  }
+
+  // Tính phần trăm chiều dài mỗi đoạn
+  const totalMinutes = 24 * 60;
+  const getPercent = (from, to) => {
+    return ((to.diff(from, 'minute')) / totalMinutes) * 100;
+  };
+
+  return (
+    <Box sx={{ mt: 1, mb: 2 }}>
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>
+        Trạng thái trạm trong ngày {dayjs(date).format('DD/MM/YYYY')}
+      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: 32, borderRadius: 2, overflow: 'hidden', boxShadow: 1, bgcolor: '#f5f5f5' }}>
+        {segments.map((seg, idx) => (
+          <Tooltip
+            key={idx}
+            title={
+              <>
+                <div><b>Trạng thái:</b> {STATUS_LABELS[seg.status] || seg.status}</div>
+                <div><b>Thời gian:</b> {dayjs(seg.from).format('HH:mm')} - {dayjs(seg.to).format('HH:mm')}</div>
+              </>
+            }
+            arrow
+            placement="top"
+          >
+            <Box
+              sx={{
+                height: 32,
+                width: `${getPercent(seg.from, seg.to)}%`,
+                bgcolor: STATUS_COLORS[seg.status] || '#bdbdbd',
+                transition: 'width 0.2s',
+                cursor: 'pointer'
+              }}
+            />
+          </Tooltip>
+        ))}
+      </Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+        <Typography variant="caption">0h</Typography>
+        <Typography variant="caption">12h</Typography>
+        <Typography variant="caption">24h</Typography>
+      </Box>
+      {loading && <Typography variant="caption" color="text.secondary">Đang tải dữ liệu...</Typography>}
+    </Box>
+  );
+}
 
 const Statistics = () => {
-  const { alerts, stations, statistics } = useData();
+  const { stations, statistics } = useData();
   const socket = useSocket();
   const [timeRange, setTimeRange] = useState('7');
+  const [selectedStation, setSelectedStation] = React.useState(stations[0]?.id || '');
+  const [selectedDate, setSelectedDate] = React.useState(dayjs().format('YYYY-MM-DD'));
 
   const handleRefresh = () => {
     if (socket) {
       socket.emit('request_stations');
-      socket.emit('request_alerts');
     }
   };
 
@@ -45,56 +158,33 @@ const Statistics = () => {
     return stations.filter(station => station.status === status).length;
   };
 
-  const getSeverityCount = (severity) => {
-    return alerts.filter(alert => alert.severity === severity).length;
-  };
-
-  const getAlertTrendData = () => {
-    const now = new Date();
-    const days = parseInt(timeRange);
-    const trendData = [];
-    
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      
-      const dayAlerts = alerts.filter(alert => {
-        const alertDate = new Date(alert.created_at).toISOString().split('T')[0];
-        return alertDate === dateStr;
-      });
-      
-      trendData.push({
-        date: dateStr,
-        total: dayAlerts.length,
-        critical: dayAlerts.filter(a => a.severity === 'critical').length,
-        high: dayAlerts.filter(a => a.severity === 'high').length,
-        medium: dayAlerts.filter(a => a.severity === 'medium').length,
-        low: dayAlerts.filter(a => a.severity === 'low').length,
-      });
-    }
-    
-    return trendData;
-  };
-
+  // Sắp xếp hiệu suất trạm sản xuất theo S-C-P và mã số tăng dần
   const getStationPerformance = () => {
-    return stations.map(station => {
-      const stationAlerts = alerts.filter(alert => alert.station_id === station.id);
-      const activeAlerts = stationAlerts.filter(alert => alert.status === 'active');
-      const criticalAlerts = stationAlerts.filter(alert => alert.severity === 'critical');
-      
-      return {
-        ...station,
-        totalAlerts: stationAlerts.length,
-        activeAlerts: activeAlerts.length,
-        criticalAlerts: criticalAlerts.length,
-        uptime: station.status === 'normal' ? 100 : station.status === 'warning' ? 75 : 50,
-      };
+    const perf = stations.map(station => ({
+      ...station,
+      uptime: station.status === 'normal' ? 100 : station.status === 'warning' ? 75 : 50,
+    }));
+    const khuOrder = { S: 0, C: 1, P: 2 };
+    perf.sort((a, b) => {
+      const khuA = khuOrder[a.code[0]] ?? 99;
+      const khuB = khuOrder[b.code[0]] ?? 99;
+      if (khuA !== khuB) return khuA - khuB;
+      const numA = parseInt(a.code.slice(1), 10);
+      const numB = parseInt(b.code.slice(1), 10);
+      return numA - numB;
     });
+    return perf;
   };
 
-  const trendData = getAlertTrendData();
   const performanceData = getStationPerformance();
+
+  // Hàm xác định khu từ code
+  const getKhu = (code) => {
+    if (code.startsWith('S')) return 'Khu Sơn';
+    if (code.startsWith('C')) return 'Khu Carcass';
+    if (code.startsWith('P')) return 'Khu Đóng Gói';
+    return '';
+  };
 
   return (
     <Box>
@@ -108,20 +198,7 @@ const Statistics = () => {
             Phân tích hiệu suất và xu hướng sản xuất
           </Typography>
         </Box>
-        
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Thời gian</InputLabel>
-            <Select
-              value={timeRange}
-              label="Thời gian"
-              onChange={(e) => setTimeRange(e.target.value)}
-            >
-              <MenuItem value="7">7 ngày</MenuItem>
-              <MenuItem value="14">14 ngày</MenuItem>
-              <MenuItem value="30">30 ngày</MenuItem>
-            </Select>
-          </FormControl>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -129,13 +206,6 @@ const Statistics = () => {
             sx={{ borderRadius: 2 }}
           >
             Làm Mới
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            sx={{ borderRadius: 2 }}
-          >
-            Xuất Báo Cáo
           </Button>
         </Box>
       </Box>
@@ -181,14 +251,14 @@ const Statistics = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="warning.main" sx={{ fontWeight: 700 }}>
-                {alerts.filter(a => a.status === 'active').length}
+                {getStatusCount('warning') + getStatusCount('maintenance')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Cảnh báo đang hoạt động
+                Trạm cảnh báo/bảo trì
               </Typography>
               <LinearProgress 
                 variant="determinate" 
-                value={alerts.length ? (alerts.filter(a => a.status === 'active').length / alerts.length) * 100 : 0} 
+                value={stations.length ? ((getStatusCount('warning') + getStatusCount('maintenance')) / stations.length) * 100 : 0} 
                 color="warning"
                 sx={{ mt: 1 }}
               />
@@ -199,14 +269,14 @@ const Statistics = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="error.main" sx={{ fontWeight: 700 }}>
-                {getSeverityCount('critical')}
+                {getStatusCount('error')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Cảnh báo nghiêm trọng
+                Trạm lỗi
               </Typography>
               <LinearProgress 
                 variant="determinate" 
-                value={alerts.length ? (getSeverityCount('critical') / alerts.length) * 100 : 0} 
+                value={stations.length ? (getStatusCount('error') / stations.length) * 100 : 0} 
                 color="error"
                 sx={{ mt: 1 }}
               />
@@ -215,244 +285,41 @@ const Statistics = () => {
         </Grid>
       </Grid>
 
-      <Grid container spacing={3}>
-        {/* Alert Trends */}
-        <Grid item xs={12} lg={8}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <TrendingUpIcon sx={{ mr: 1, color: 'primary.main' }} />
-                <Typography variant="h6" component="h2">
-                  Xu Hướng Cảnh Báo ({timeRange} ngày gần đây)
-                </Typography>
+      <Card sx={{ mb: 4, p: 2, borderRadius: 3, boxShadow: 3, bgcolor: '#fff' }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+          <TextField
+            type="date"
+            size="small"
+            label="Chọn ngày"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 180 }}
+          />
+        </Box>
+        {/* Hiển thị 11 thanh timeline cho tất cả trạm */}
+        {stations
+          .slice()
+          .sort((a, b) => {
+            const khuOrder = { S: 0, C: 1, P: 2 };
+            const khuA = khuOrder[a.code[0]] ?? 99;
+            const khuB = khuOrder[b.code[0]] ?? 99;
+            if (khuA !== khuB) return khuA - khuB;
+            const numA = parseInt(a.code.slice(1), 10);
+            const numB = parseInt(b.code.slice(1), 10);
+            return numA - numB;
+          })
+          .map(station => (
+            <Box key={station.id} sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Chip label={station.code} size="small" color="primary" sx={{ mr: 1 }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mr: 2 }}>{station.name}</Typography>
+                <Typography variant="caption" color="text.secondary">{station.description}</Typography>
               </Box>
-              
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Ngày</TableCell>
-                      <TableCell align="center">Tổng</TableCell>
-                      <TableCell align="center">Nghiêm trọng</TableCell>
-                      <TableCell align="center">Cao</TableCell>
-                      <TableCell align="center">Trung bình</TableCell>
-                      <TableCell align="center">Thấp</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {trendData.map((row) => (
-                      <TableRow key={row.date}>
-                        <TableCell>{new Date(row.date).toLocaleDateString('vi-VN')}</TableCell>
-                        <TableCell align="center">
-                          <Chip 
-                            label={row.total} 
-                            size="small" 
-                            color={row.total > 5 ? 'error' : row.total > 2 ? 'warning' : 'success'}
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          {row.critical > 0 && (
-                            <Chip label={row.critical} size="small" color="error" />
-                          )}
-                        </TableCell>
-                        <TableCell align="center">
-                          {row.high > 0 && (
-                            <Chip label={row.high} size="small" color="warning" />
-                          )}
-                        </TableCell>
-                        <TableCell align="center">
-                          {row.medium > 0 && (
-                            <Chip label={row.medium} size="small" color="info" />
-                          )}
-                        </TableCell>
-                        <TableCell align="center">
-                          {row.low > 0 && (
-                            <Chip label={row.low} size="small" color="success" />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Severity Distribution */}
-        <Grid item xs={12} lg={4}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <BarChartIcon sx={{ mr: 1, color: 'primary.main' }} />
-                <Typography variant="h6" component="h2">
-                  Phân Bố Mức Độ Cảnh Báo
-                </Typography>
-              </Box>
-              
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">Nghiêm trọng</Typography>
-                    <Typography variant="body2" color="error.main">
-                      {getSeverityCount('critical')}
-                    </Typography>
-                  </Box>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={alerts.length ? (getSeverityCount('critical') / alerts.length) * 100 : 0} 
-                    color="error"
-                    sx={{ height: 8, borderRadius: 4 }}
-                  />
-                </Box>
-                
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">Cao</Typography>
-                    <Typography variant="body2" color="warning.main">
-                      {getSeverityCount('high')}
-                    </Typography>
-                  </Box>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={alerts.length ? (getSeverityCount('high') / alerts.length) * 100 : 0} 
-                    color="warning"
-                    sx={{ height: 8, borderRadius: 4 }}
-                  />
-                </Box>
-                
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">Trung bình</Typography>
-                    <Typography variant="body2" color="info.main">
-                      {getSeverityCount('medium')}
-                    </Typography>
-                  </Box>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={alerts.length ? (getSeverityCount('medium') / alerts.length) * 100 : 0} 
-                    color="info"
-                    sx={{ height: 8, borderRadius: 4 }}
-                  />
-                </Box>
-                
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">Thấp</Typography>
-                    <Typography variant="body2" color="success.main">
-                      {getSeverityCount('low')}
-                    </Typography>
-                  </Box>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={alerts.length ? (getSeverityCount('low') / alerts.length) * 100 : 0} 
-                    color="success"
-                    sx={{ height: 8, borderRadius: 4 }}
-                  />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Station Performance */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <BarChartIcon sx={{ mr: 1, color: 'primary.main' }} />
-                <Typography variant="h6" component="h2">
-                  Hiệu Suất Trạm Sản Xuất
-                </Typography>
-              </Box>
-              
-              <TableContainer component={Paper} variant="outlined">
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Trạm</TableCell>
-                      <TableCell>Mã</TableCell>
-                      <TableCell align="center">Trạng thái</TableCell>
-                      <TableCell align="center">Tổng cảnh báo</TableCell>
-                      <TableCell align="center">Đang hoạt động</TableCell>
-                      <TableCell align="center">Nghiêm trọng</TableCell>
-                      <TableCell align="center">Uptime (%)</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {performanceData.map((station) => (
-                      <TableRow key={station.id}>
-                        <TableCell>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                            {station.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {station.description}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={station.code} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip 
-                            label={
-                              station.status === 'normal' ? 'Bình thường' :
-                              station.status === 'warning' ? 'Cảnh báo' :
-                              station.status === 'error' ? 'Lỗi' : 'Bảo trì'
-                            }
-                            color={
-                              station.status === 'normal' ? 'success' :
-                              station.status === 'warning' ? 'warning' :
-                              station.status === 'error' ? 'error' : 'info'
-                            }
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Typography variant="body2">
-                            {station.totalAlerts}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          {station.activeAlerts > 0 && (
-                            <Chip 
-                              label={station.activeAlerts} 
-                              size="small" 
-                              color="warning" 
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell align="center">
-                          {station.criticalAlerts > 0 && (
-                            <Chip 
-                              label={station.criticalAlerts} 
-                              size="small" 
-                              color="error" 
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell align="center">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2">
-                              {station.uptime}%
-                            </Typography>
-                            <LinearProgress 
-                              variant="determinate" 
-                              value={station.uptime} 
-                              color={station.uptime > 90 ? 'success' : station.uptime > 70 ? 'warning' : 'error'}
-                              sx={{ width: 60, height: 6, borderRadius: 3 }}
-                            />
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+              <StationStatusTimeline stationId={station.id} date={selectedDate} stations={stations} />
+            </Box>
+        ))}
+      </Card>
     </Box>
   );
 };

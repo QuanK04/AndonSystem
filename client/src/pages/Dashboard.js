@@ -12,6 +12,12 @@ import {
   Divider,
   Alert,
   Button,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
 } from '@mui/material';
 import {
   Factory as FactoryIcon,
@@ -25,17 +31,13 @@ import {
 import { useData } from '../context/DataContext';
 import { useSocket } from '../context/SocketContext';
 import StationCard from '../components/StationCard';
-import AlertList from '../components/AlertList';
 import StatisticsCards from '../components/StatisticsCards';
-import CreateAlertDialog from '../components/CreateAlertDialog';
+import axios from 'axios';
 
 const Dashboard = () => {
-  const { stations, alerts, statistics } = useData();
+  const { stations, statistics } = useData();
   const socket = useSocket();
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
-
-  const activeAlerts = alerts.filter(alert => alert.status === 'active');
-  const criticalAlerts = activeAlerts.filter(alert => alert.severity === 'critical');
 
   const getStatusCount = (status) => {
     return stations.filter(station => station.status === status).length;
@@ -52,6 +54,36 @@ const Dashboard = () => {
     setCreateAlertOpen(true);
   };
 
+  const handleResetAllStations = async () => {
+    if (!window.confirm('Bạn có chắc muốn đặt lại tất cả các trạm về trạng thái bình thường?')) return;
+    try {
+      await axios.post('/api/stations/reset-all');
+      if (socket) {
+        socket.emit('request_stations');
+      }
+    } catch (err) {
+      alert('Có lỗi khi reset trạng thái các trạm!');
+    }
+  };
+
+  // Tính tổng cảnh báo active từ các trạm
+  const totalActiveAlerts = stations.reduce((sum, s) => sum + (parseInt(s.active_alerts, 10) || 0), 0);
+  // Đếm số trạm theo trạng thái
+  const totalNormalStations = stations.filter(s => s.status === 'normal').length;
+  const totalWarningStations = stations.filter(s => s.status === 'warning').length;
+  const totalErrorStations = stations.filter(s => s.status === 'error').length;
+  const totalMaintenanceStations = stations.filter(s => s.status === 'maintenance').length;
+  console.log('Stations:', stations);
+  console.log('Tổng cảnh báo:', totalActiveAlerts);
+  // Nhóm trạm theo khu và sắp xếp theo code tăng dần
+  const sortByCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true });
+  const khuSon = stations.filter(s => s.code.startsWith('S')).sort(sortByCode);
+  const khuCarcass = stations.filter(s => s.code.startsWith('C')).sort(sortByCode);
+  const khuDongGoi = stations.filter(s => s.code.startsWith('P')).sort(sortByCode);
+
+  // Các trạm có trạng thái khác bình thường
+  const abnormalStations = stations.filter(s => s.status !== 'normal');
+
   return (
     <Box>
       {/* Header */}
@@ -64,15 +96,14 @@ const Dashboard = () => {
             Giám sát thời gian thực hệ thống Andon TEKCOM
           </Typography>
         </Box>
-        
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={handleCreateAlert}
+            variant="contained"
+            color="error"
+            onClick={handleResetAllStations}
             sx={{ borderRadius: 2 }}
           >
-            Tạo Cảnh Báo
+            Reset trạng thái tất cả trạm
           </Button>
           <Tooltip title="Làm mới dữ liệu">
             <IconButton onClick={handleRefresh} sx={{ borderRadius: 2 }}>
@@ -83,23 +114,59 @@ const Dashboard = () => {
       </Box>
 
       {/* Critical Alerts Banner */}
-      {criticalAlerts.length > 0 && (
-        <Alert 
-          severity="error" 
-          icon={<ErrorIcon />}
-          sx={{ mb: 3, borderRadius: 2 }}
-        >
-          <Typography variant="h6" gutterBottom>
-            ⚠️ Cảnh báo nghiêm trọng!
-          </Typography>
-          <Typography variant="body2">
-            Có {criticalAlerts.length} cảnh báo nghiêm trọng cần xử lý ngay lập tức.
-          </Typography>
-        </Alert>
-      )}
+      {/* Removed critical alerts logic */}
 
       {/* Statistics Cards */}
-      <StatisticsCards statistics={statistics} />
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h4" color="success.main" sx={{ fontWeight: 700 }}>
+                {totalNormalStations}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Trạm bình thường
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h4" color="warning.main" sx={{ fontWeight: 700 }}>
+                {totalWarningStations}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Trạm cảnh báo
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h4" color="error.main" sx={{ fontWeight: 700 }}>
+                {totalErrorStations}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Trạm lỗi
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h4" color="info.main" sx={{ fontWeight: 700 }}>
+                {totalMaintenanceStations}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Trạm bảo trì
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       <Grid container spacing={3} sx={{ mt: 2 }}>
         {/* Factory Layout */}
@@ -109,119 +176,72 @@ const Dashboard = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                 <FactoryIcon sx={{ mr: 1, color: 'primary.main' }} />
                 <Typography variant="h6" component="h2">
-                  Sơ Đồ Xưởng Sản Xuất
+                  Sơ Đồ Nhà Máy
                 </Typography>
                 <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
                   <Chip 
                     icon={<CheckCircleIcon />} 
-                    label={`Bình thường: ${getStatusCount('normal')}`} 
+                    label={`Bình thường: ${totalNormalStations}`} 
                     color="success" 
                     size="small" 
                   />
                   <Chip 
                     icon={<WarningIcon />} 
-                    label={`Cảnh báo: ${getStatusCount('warning')}`} 
+                    label={`Cảnh báo: ${totalWarningStations}`} 
                     color="warning" 
                     size="small" 
                   />
                   <Chip 
                     icon={<ErrorIcon />} 
-                    label={`Lỗi: ${getStatusCount('error')}`} 
+                    label={`Lỗi: ${totalErrorStations}`} 
                     color="error" 
                     size="small" 
                   />
                   <Chip 
                     icon={<BuildIcon />} 
-                    label={`Bảo trì: ${getStatusCount('maintenance')}`} 
+                    label={`Bảo trì: ${totalMaintenanceStations}`} 
                     color="info" 
                     size="small" 
                   />
                 </Box>
               </Box>
 
-              {/* Factory Layout Grid */}
-              <Paper 
-                elevation={2} 
-                sx={{ 
-                  p: 3, 
-                  background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-                  borderRadius: 3,
-                  position: 'relative',
-                  minHeight: 400,
-                }}
-              >
-                <Grid container spacing={2}>
-                  {/* Row 1: CNC, Dán cạnh, Khoan lỗ */}
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'CNC')} 
-                      position="top-left"
-                    />
+              {/* Khu Sơn */}
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>Khu Sơn</Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                {khuSon.map(station => (
+                  <Grid item xs={12} sm={6} md={3} key={station.code}>
+                    <StationCard station={station} />
                   </Grid>
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'EDGE')} 
-                      position="top-center"
-                    />
-                  </Grid>
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'DRILL')} 
-                      position="top-right"
-                    />
-                  </Grid>
+                ))}
+              </Grid>
 
-                  {/* Conveyor Line */}
-                  <Grid item xs={12}>
-                    <Box 
-                      sx={{ 
-                        height: 4, 
-                        background: 'linear-gradient(90deg, #1976d2, #42a5f5, #1976d2)',
-                        borderRadius: 2,
-                        my: 2,
-                        position: 'relative',
-                        '&::before': {
-                          content: '""',
-                          position: 'absolute',
-                          top: -2,
-                          left: 0,
-                          right: 0,
-                          height: 8,
-                          background: 'repeating-linear-gradient(90deg, transparent, transparent 20px, #fff 20px, #fff 40px)',
-                          borderRadius: 4,
-                        }
-                      }}
-                    />
+              {/* Khu Carcass */}
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>Khu Carcass</Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                {khuCarcass.map(station => (
+                  <Grid item xs={12} sm={6} md={3} key={station.code}>
+                    <StationCard station={station} />
                   </Grid>
+                ))}
+              </Grid>
 
-                  {/* Row 2: Lắp ráp, KCS, Đóng gói */}
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'ASSEMBLY')} 
-                      position="bottom-left"
-                    />
+              {/* Khu Đóng Gói */}
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>Khu Đóng Gói</Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                {khuDongGoi.map(station => (
+                  <Grid item xs={12} sm={6} md={3} key={station.code}>
+                    <StationCard station={station} />
                   </Grid>
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'QC')} 
-                      position="bottom-center"
-                    />
-                  </Grid>
-                  <Grid item xs={4}>
-                    <StationCard 
-                      station={stations.find(s => s.code === 'PACK')} 
-                      position="bottom-right"
-                    />
-                  </Grid>
-                </Grid>
+                ))}
+              </Grid>
 
-                {/* Legend */}
-                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    🟢 Bình thường | 🟡 Cảnh báo | 🔴 Lỗi | 🔵 Bảo trì
-                  </Typography>
-                </Box>
-              </Paper>
+              {/* Legend */}
+              <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                <Typography variant="caption" color="text.secondary">
+                  🟢 Bình thường | 🟡 Cảnh báo | 🔴 Lỗi | 🔵 Bảo trì
+                </Typography>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -236,24 +256,65 @@ const Dashboard = () => {
                   Cảnh Báo Đang Hoạt Động
                 </Typography>
                 <Chip 
-                  label={activeAlerts.length} 
-                  color="warning" 
+                  label={abnormalStations.length} 
+                  color={abnormalStations.length > 0 ? 'warning' : 'success'} 
                   size="small" 
                   sx={{ ml: 'auto' }}
                 />
               </Box>
-              
               <Divider sx={{ mb: 2 }} />
-              
-              {activeAlerts.length === 0 ? (
+              {abnormalStations.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main', mb: 2 }} />
                   <Typography variant="body2" color="text.secondary">
-                    Không có cảnh báo nào đang hoạt động
+                    Không có trạm nào đang ở trạng thái cảnh báo, lỗi hoặc bảo trì
                   </Typography>
                 </Box>
               ) : (
-                <AlertList alerts={activeAlerts} maxHeight={400} />
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell align="center">Trạng thái</TableCell>
+                        <TableCell align="center">Mã trạm</TableCell>
+                        <TableCell>Tên trạm</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {abnormalStations.map(station => (
+                        <TableRow key={station.id}>
+                          <TableCell align="center">
+                            <Chip 
+                              label={
+                                station.status === 'warning' ? 'Cảnh báo' :
+                                station.status === 'error' ? 'Lỗi' :
+                                'Bảo trì'
+                              }
+                              color={
+                                station.status === 'warning' ? 'warning' :
+                                station.status === 'error' ? 'error' :
+                                'info'
+                              }
+                              size="small"
+                              sx={{ fontWeight: 700 }}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <Chip label={station.code} size="small" color="primary" />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                              {station.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {station.description}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
             </CardContent>
           </Card>
@@ -261,11 +322,6 @@ const Dashboard = () => {
       </Grid>
 
       {/* Create Alert Dialog */}
-      <CreateAlertDialog 
-        open={createAlertOpen} 
-        onClose={() => setCreateAlertOpen(false)}
-        stations={stations}
-      />
     </Box>
   );
 };

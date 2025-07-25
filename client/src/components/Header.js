@@ -26,15 +26,13 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+import ClockBox from './ClockBox';
 
 const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { alerts, connectionStatus } = useData();
+  const { connectionStatus } = useData();
   const [anchorEl, setAnchorEl] = useState(null);
-
-  const activeAlerts = alerts.filter(alert => alert.status === 'active');
-  const criticalAlerts = activeAlerts.filter(alert => alert.severity === 'critical');
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -84,7 +82,6 @@ const Header = () => {
 
   const navigationItems = [
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
-    { path: '/alerts', label: 'Cảnh báo', icon: <WarningIcon /> },
     { path: '/statistics', label: 'Thống kê', icon: <BarChartIcon /> },
     { path: '/settings', label: 'Cài đặt', icon: <SettingsIcon /> },
   ];
@@ -123,6 +120,11 @@ const Header = () => {
           >
             TEKCOM Manufacturing
           </Typography>
+        </Box>
+
+        {/* ClockBox */}
+        <Box sx={{ mr: 2 }}>
+          <ClockBox />
         </Box>
 
         {/* Navigation */}
@@ -164,21 +166,6 @@ const Header = () => {
         </Tooltip>
 
         {/* Alerts Badge */}
-        <Tooltip title={`${activeAlerts.length} cảnh báo đang hoạt động`}>
-          <IconButton
-            color="inherit"
-            onClick={() => navigate('/alerts')}
-            sx={{ mr: 1 }}
-          >
-            <Badge 
-              badgeContent={activeAlerts.length} 
-              color={criticalAlerts.length > 0 ? 'error' : 'warning'}
-              max={99}
-            >
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
-        </Tooltip>
 
         {/* User Menu */}
         <Tooltip title="Tài khoản">

@@ -20,10 +20,12 @@ import {
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useData } from '../context/DataContext';
 
 const StationCard = ({ station, position = 'center' }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const socket = useSocket();
+  const { setStations } = useData();
 
   if (!station) {
     return (
@@ -47,50 +49,20 @@ const StationCard = ({ station, position = 'center' }) => {
     );
   }
 
-  const getStatusColor = () => {
-    switch (station.status) {
-      case 'normal':
-        return 'success';
-      case 'warning':
-        return 'warning';
-      case 'error':
-        return 'error';
-      case 'maintenance':
-        return 'info';
-      default:
-        return 'default';
+  // Ưu tiên trạng thái: Lỗi > Bảo trì > Cảnh báo > Bình thường
+  const getMainStatus = () => {
+    if (station.status === 'error') {
+      return { label: 'Lỗi', color: 'error', icon: <ErrorIcon /> };
     }
-  };
-
-  const getStatusIcon = () => {
-    switch (station.status) {
-      case 'normal':
-        return <CheckCircleIcon />;
-      case 'warning':
-        return <WarningIcon />;
-      case 'error':
-        return <ErrorIcon />;
-      case 'maintenance':
-        return <BuildIcon />;
-      default:
-        return <CheckCircleIcon />;
+    if (station.status === 'maintenance') {
+      return { label: 'Bảo trì', color: 'info', icon: <BuildIcon /> };
     }
-  };
-
-  const getStatusText = () => {
-    switch (station.status) {
-      case 'normal':
-        return 'Bình thường';
-      case 'warning':
-        return 'Cảnh báo';
-      case 'error':
-        return 'Lỗi';
-      case 'maintenance':
-        return 'Bảo trì';
-      default:
-        return 'Không xác định';
+    if (station.status === 'warning') {
+      return { label: 'Cảnh báo', color: 'warning', icon: <WarningIcon /> };
     }
+    return { label: 'Bình thường', color: 'success', icon: <CheckCircleIcon /> };
   };
+  const mainStatus = getMainStatus();
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -107,6 +79,10 @@ const StationCard = ({ station, position = 'center' }) => {
         status: newStatus
       });
     }
+    // Cập nhật local state ngay (optimistic update)
+    setStations(prev => prev.map(s =>
+      s.id === station.id ? { ...s, status: newStatus, last_updated: new Date().toISOString() } : s
+    ));
     handleMenuClose();
   };
 
@@ -162,20 +138,12 @@ const StationCard = ({ station, position = 'center' }) => {
         {/* Status */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
           <Chip
-            icon={getStatusIcon()}
-            label={getStatusText()}
-            color={getStatusColor()}
+            icon={mainStatus.icon}
+            label={mainStatus.label}
+            color={mainStatus.color}
             size="small"
             sx={{ fontSize: '0.75rem' }}
           />
-          {station.active_alerts > 0 && (
-            <Chip
-              label={`${station.active_alerts} cảnh báo`}
-              color="warning"
-              size="small"
-              sx={{ ml: 1, fontSize: '0.7rem' }}
-            />
-          )}
         </Box>
 
         {/* Description */}
